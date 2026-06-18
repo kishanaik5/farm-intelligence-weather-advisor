@@ -24,9 +24,11 @@ setup and no API key**.
 
 - **Field health:** computes NDVI & EVI from red + NIR bands, buckets pixels into
   bare / stressed / moderate / healthy, and shows an NDVI heatmap + distribution.
-- **Weather:** pulls the keyless Open-Meteo forecast and runs an explicit rule
-  engine (irrigation, spraying windows, frost/heat, sowing) — each suggestion
-  shows the reason it fired.
+- **Weather:** pulls the keyless Open-Meteo forecast, buckets it into condition
+  levels (temp/moisture/wind/rain), and resolves four advisories — **irrigation,
+  spraying, fungal_risk, field_work** — each with a status (STABLE/CAUTION/URGENT),
+  severity score, and a message in **13 Indian languages**, from a bundled
+  knowledge base. Every advisory shows the triggering bucket combination.
 - **Combined:** fuses canopy stress with the weather rules into one prioritised
   headline, optionally restated in an Indian language via Gemini.
 

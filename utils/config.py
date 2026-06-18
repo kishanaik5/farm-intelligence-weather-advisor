@@ -13,7 +13,14 @@ from typing import Optional
 GEMINI_API_KEY_ENV: str = "GEMINI_API_KEY"
 AGRO_API_KEY_ENV: str = "AGRO_API_KEY"
 
-LANGUAGES = ["English", "Hindi", "Kannada", "Telugu", "Tamil", "Marathi", "Bengali"]
+# Languages available directly in the bundled advisory-rules knowledge base
+# (no LLM needed) — maps a display name to its CSV message-column suffix.
+LANGUAGE_COL = {
+    "English": "en", "Hindi": "hn", "Kannada": "kn", "Tamil": "ta", "Telugu": "te",
+    "Malayalam": "ml", "Marathi": "mr", "Gujarati": "gu", "Bengali": "bn",
+    "Punjabi": "pa", "Urdu": "ur", "Nepali": "ne", "Odia": "or",
+}
+LANGUAGES = list(LANGUAGE_COL.keys())
 
 # Standard NDVI health buckets: (label, lower_bound_inclusive).
 # A pixel falls in the highest bucket whose lower bound it meets.

@@ -78,9 +78,14 @@ def fetch_forecast(lat: float, lon: float) -> Dict[str, pd.DataFrame]:
     return {"daily": daily, "hourly": hourly}
 
 
-def forecast_summary(daily: pd.DataFrame, days: int = 3) -> Dict[str, float]:
-    """Summarize the next ``days`` for the rule engine (totals/extremes)."""
+def forecast_summary(
+    daily: pd.DataFrame, hourly: pd.DataFrame | None = None, days: int = 3
+) -> Dict[str, float]:
+    """Summarize the next ``days`` for the rule engine (totals/extremes/humidity)."""
     head = daily.head(days)
+    mean_humidity = float("nan")
+    if hourly is not None and "relative_humidity_2m" in hourly:
+        mean_humidity = float(hourly.head(days * 24)["relative_humidity_2m"].mean())
     return {
         "days": int(len(head)),
         "total_rain_mm": round(float(head["precipitation_sum"].fillna(0).sum()), 1),
@@ -88,4 +93,5 @@ def forecast_summary(daily: pd.DataFrame, days: int = 3) -> Dict[str, float]:
         "max_temp": float(head["temperature_2m_max"].max()),
         "min_temp": float(head["temperature_2m_min"].min()),
         "max_wind": float(head["wind_speed_10m_max"].max()),
+        "mean_humidity": mean_humidity,
     }

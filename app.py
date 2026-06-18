@@ -12,14 +12,14 @@ import pandas as pd
 import streamlit as st
 
 from services.fusion import fuse, fusion_to_text
-from services.rules import evaluate
+from services.rules import bucket_conditions, get_advisories
 from services.vegetation import analyze_field, load_sample_field
 from services.weather import fetch_forecast, forecast_summary, geocode
 from utils.config import LANGUAGES, get_agro_api_key, get_gemini_api_key
 
 st.set_page_config(page_title="Farm Intelligence & Weather Advisor", page_icon="🛰️", layout="wide")
 
-LEVEL_ICON = {"good": "✅", "info": "ℹ️", "warning": "⚠️", "alert": "🚨"}
+STATUS_ICON = {"STABLE": "✅", "CAUTION": "⚠️", "URGENT": "🚨"}
 
 st.title("🛰️ Farm Intelligence & Weather Advisor")
 st.caption(
@@ -91,7 +91,7 @@ try:
     if geo:
         lat, lon, resolved = geo
         forecast = fetch_forecast(lat, lon)
-        summary = forecast_summary(forecast["daily"], days=3)
+        summary = forecast_summary(forecast["daily"], forecast.get("hourly"), days=3)
 except RuntimeError as exc:
     st.error(str(exc))
 
@@ -153,11 +153,26 @@ with tab_b:
         st.line_chart(chart_df[["Max °C", "Min °C"]])
         st.bar_chart(chart_df[["Rain mm"]])
 
-        st.subheader("Operational suggestions")
-        for s in evaluate(summary):
+        buckets = bucket_conditions(summary)
+        st.subheader("Condition buckets (next 3 days)")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Temperature", buckets["temp_level"])
+        b2.metric("Moisture", buckets["moisture"])
+        b3.metric("Wind", buckets["wind_risk"])
+        b4.metric("Rain", buckets["rain_status"])
+
+        st.subheader("Operational advisories")
+        for a in get_advisories(summary, language):
             with st.container(border=True):
-                st.markdown(f"{LEVEL_ICON.get(s.level, '•')} **{s.category}: {s.message}**")
-                st.caption(f"Why: {s.reason}")
+                st.markdown(
+                    f"{STATUS_ICON.get(a.status, '•')} **{a.advisory_type.replace('_', ' ').title()} "
+                    f"— {a.title}**  ·  _{a.status}_ (severity {a.severity_score})"
+                )
+                st.write(a.message)
+                cap = f"Why: {a.why}"
+                if a.time_window:
+                    cap += f"  ·  Window: {a.time_window}"
+                st.caption(cap)
     else:
         st.info("Enter a valid location in the sidebar to load the weather forecast.")
 
@@ -167,8 +182,9 @@ with tab_c:
         st.info("The combined advisory needs both field health and weather. "
                 "Use the sample field and a valid location to see it.")
     else:
-        suggestions = evaluate(summary)
-        fused = fuse(health.mean_ndvi, health.class_pct, suggestions)
+        advisories = get_advisories(summary, language)
+        buckets = bucket_conditions(summary)
+        fused = fuse(health.mean_ndvi, health.class_pct, advisories, buckets)
         prio_color = {"high": "🔴", "medium": "🟠", "low": "🟢"}[fused["priority"]]
         st.subheader(f"{prio_color} {fused['headline']}")
 

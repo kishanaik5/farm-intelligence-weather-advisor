@@ -1,95 +1,96 @@
-"""Explainable, rule-based farm-operations advisory.
+"""Rule-based farm-operations advisory engine.
 
-Each rule reads the forecast summary and emits a suggestion together with the
-*reason* it fired, so nothing is a black box. Thresholds live in
-``utils.config.RULES_CONFIG`` and are easy to read and tune.
+The forecast is bucketed into four explainable condition levels
+(temp_level / moisture / wind_risk / rain_status). Those buckets are looked up in
+a bundled knowledge base (`data/weather_advisory_rules.csv`) to produce four
+advisories — irrigation, spraying, fungal_risk, field_work — each with a status,
+severity score, icon, and a message available in 13 Indian languages. Every rule
+is explicit and the triggering bucket values are surfaced as the "why".
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Dict, List
 
-from utils.config import RULES_CONFIG
+import pandas as pd
+import streamlit as st
+
+from utils.config import LANGUAGE_COL
+
+_RULES_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "weather_advisory_rules.csv")
+ADVISORY_TYPES = ["irrigation", "spraying", "fungal_risk", "field_work"]
 
 
 @dataclass
-class Suggestion:
-    """One operational suggestion with its severity and triggering reason."""
+class Advisory:
+    """One advisory item resolved from the bucketed conditions."""
 
-    category: str          # Irrigation / Spraying / Frost / Heat / Sowing
-    level: str             # info / good / warning / alert
+    advisory_type: str
+    status: str           # STABLE / CAUTION / URGENT
+    severity_score: int
+    title: str
     message: str
-    reason: str
+    icon_type: str
+    time_window: str
+    why: str              # the triggering bucket combination
 
 
-def evaluate(summary: Dict[str, float]) -> List[Suggestion]:
-    """Run all rules over the forecast summary and return triggered suggestions."""
-    cfg = RULES_CONFIG
-    out: List[Suggestion] = []
-    days = summary.get("days", 3)
+def bucket_conditions(summary: Dict[str, float]) -> Dict[str, str]:
+    """Map raw forecast metrics to the knowledge-base condition buckets."""
+    t = summary["max_temp"]
+    temp_level = "Extreme Heat" if t >= 40 else ("Very Hot" if t >= 35 else "Moderate")
 
-    # --- Irrigation: low cumulative rain + heat raises water demand ---
-    if summary["total_rain_mm"] < cfg["irrigation_rain_mm"] and summary["max_temp"] >= cfg["irrigation_temp_c"]:
-        out.append(Suggestion(
-            "Irrigation", "warning",
-            "Irrigate soon — the crop will face water stress.",
-            f"Only {summary['total_rain_mm']} mm rain forecast over {days} days with "
-            f"highs up to {summary['max_temp']:.0f}°C (≥{cfg['irrigation_temp_c']:.0f}°C).",
-        ))
-    elif summary["total_rain_mm"] >= cfg["irrigation_rain_mm"]:
-        out.append(Suggestion(
-            "Irrigation", "good",
-            "Hold irrigation — rain should cover crop water needs.",
-            f"{summary['total_rain_mm']} mm rain expected over {days} days "
-            f"(≥{cfg['irrigation_rain_mm']:.0f} mm).",
-        ))
-
-    # --- Spraying: safe only in low wind and low imminent-rain chance ---
-    if summary["max_wind"] <= cfg["spray_wind_kmh"] and summary["max_rain_prob"] <= cfg["spray_rain_prob_pct"]:
-        out.append(Suggestion(
-            "Spraying", "good",
-            "Good window for spraying in the next few days.",
-            f"Wind up to {summary['max_wind']:.0f} km/h (≤{cfg['spray_wind_kmh']:.0f}) and "
-            f"rain chance up to {summary['max_rain_prob']:.0f}% (≤{cfg['spray_rain_prob_pct']:.0f}%).",
-        ))
+    h = summary.get("mean_humidity")
+    if h is None or pd.isna(h):  # fall back to rain as a moisture proxy
+        moisture = "Humid" if summary["total_rain_mm"] >= 15 else (
+            "Balanced" if summary["total_rain_mm"] >= 2.5 else "Very Dry")
     else:
-        reasons = []
-        if summary["max_wind"] > cfg["spray_wind_kmh"]:
-            reasons.append(f"wind up to {summary['max_wind']:.0f} km/h (>{cfg['spray_wind_kmh']:.0f})")
-        if summary["max_rain_prob"] > cfg["spray_rain_prob_pct"]:
-            reasons.append(f"rain chance up to {summary['max_rain_prob']:.0f}% (>{cfg['spray_rain_prob_pct']:.0f}%)")
-        out.append(Suggestion(
-            "Spraying", "warning",
-            "Avoid spraying — drift or wash-off likely.",
-            " and ".join(reasons) + ".",
-        ))
+        moisture = "Humid" if h >= 70 else ("Balanced" if h >= 40 else "Very Dry")
 
-    # --- Frost risk ---
-    if summary["min_temp"] <= cfg["frost_temp_c"]:
-        out.append(Suggestion(
-            "Frost", "alert",
-            "Frost protection advised (cover seedlings / light irrigation at night).",
-            f"Minimum temperature could drop to {summary['min_temp']:.0f}°C "
-            f"(≤{cfg['frost_temp_c']:.0f}°C).",
-        ))
+    w = summary["max_wind"]
+    wind_risk = "Strong Gusts" if w >= 30 else ("Breezy" if w >= 15 else "Calm")
 
-    # --- Heat stress ---
-    if summary["max_temp"] >= cfg["heat_stress_temp_c"]:
-        out.append(Suggestion(
-            "Heat", "alert",
-            "Heat-stress risk — irrigate to cool the canopy and avoid midday operations.",
-            f"Maximum temperature could reach {summary['max_temp']:.0f}°C "
-            f"(≥{cfg['heat_stress_temp_c']:.0f}°C).",
-        ))
+    r = summary["total_rain_mm"]
+    rain_status = "Heavy Rain" if r >= 15 else ("Light Rain" if r >= 2.5 else "Dry")
 
-    # --- Sowing/harvest suitability ---
-    if cfg["sowing_min_c"] <= summary["min_temp"] and summary["max_temp"] <= cfg["sowing_max_c"] \
-            and summary["max_rain_prob"] < 60:
-        out.append(Suggestion(
-            "Sowing", "good",
-            "Conditions look suitable for sowing/field operations.",
-            f"Temperatures {summary['min_temp']:.0f}–{summary['max_temp']:.0f}°C within the "
-            f"{cfg['sowing_min_c']:.0f}–{cfg['sowing_max_c']:.0f}°C band and moderate rain chance.",
-        ))
+    return {"temp_level": temp_level, "moisture": moisture,
+            "wind_risk": wind_risk, "rain_status": rain_status}
 
-    return out
+
+@st.cache_data(show_spinner=False)
+def load_rules() -> pd.DataFrame:
+    """Load the bundled advisory-rules knowledge base."""
+    return pd.read_csv(_RULES_PATH)
+
+
+def get_advisories(summary: Dict[str, float], language: str = "English") -> List[Advisory]:
+    """Resolve the four advisories for the bucketed forecast, sorted by severity."""
+    buckets = bucket_conditions(summary)
+    rules = load_rules()
+    col = f"message_{LANGUAGE_COL.get(language, 'en')}"
+    why = (f"{buckets['temp_level']} · {buckets['moisture']} · "
+           f"{buckets['wind_risk']} · {buckets['rain_status']}")
+
+    match = rules[
+        (rules["temp_level"] == buckets["temp_level"])
+        & (rules["moisture"] == buckets["moisture"])
+        & (rules["wind_risk"] == buckets["wind_risk"])
+        & (rules["rain_status"] == buckets["rain_status"])
+    ]
+
+    out: List[Advisory] = []
+    for atype in ADVISORY_TYPES:
+        row = match[match["advisory_type"] == atype]
+        if row.empty:
+            continue
+        r = row.iloc[0]
+        message = r.get(col) if col in r and pd.notna(r.get(col)) else r.get("message_en", "")
+        out.append(Advisory(
+            advisory_type=atype, status=str(r.get("status", "")),
+            severity_score=int(r.get("severity_score", 0)),
+            title=str(r.get("title", atype.replace("_", " ").title())),
+            message=str(message), icon_type=str(r.get("icon_type", "")),
+            time_window=str(r.get("time_window", "") or ""), why=why,
+        ))
+    return sorted(out, key=lambda a: a.severity_score, reverse=True)
