@@ -92,17 +92,22 @@ with st.sidebar:
     env_agro = get_agro_api_key()
 
     gemini_ui = st.text_input(
-        "Gemini API Key (optional)",
+        "Gemini API Key (optional override)",
         type="password",
-        value=env_gemini or "",
-        help="Synthesizes precision agronomic advisories. Reads from GEMINI_API_KEY environment secret by default."
+        help="Leave blank to use the secure key configured in secrets/environment.",
+        placeholder="Loaded securely from secrets" if env_gemini else "Enter custom Gemini key..."
     )
+    if env_gemini and not gemini_ui:
+        st.caption("🔒 Active: Configured securely via environment/secrets.")
+
     agro_ui = st.text_input(
-        "AgroMonitoring API Key (optional)",
+        "AgroMonitoring API Key (optional override)",
         type="password",
-        value=env_agro or "",
-        help="Fetches live Sentinel-2 NDVI scenes and soil probe moisture from AgroMonitoring. Reads from AGRO_API_KEY environment secret by default."
+        help="Leave blank to use the secure key configured in secrets/environment.",
+        placeholder="Loaded securely from secrets" if env_agro else "Enter custom AgroMonitoring key..."
     )
+    if env_agro and not agro_ui:
+        st.caption("🔒 Active: Configured securely via environment/secrets.")
 
     gemini_key = get_gemini_api_key(gemini_ui)
     agro_key = get_agro_api_key(agro_ui)

@@ -52,16 +52,38 @@ except ImportError:
 
 
 def get_gemini_api_key(ui_key: Optional[str] = None) -> Optional[str]:
-    """Resolve the Gemini key: UI input wins, else env var, else None."""
+    """Resolve the Gemini key: UI input wins, else env var, else st.secrets, else None."""
     if ui_key and ui_key.strip():
         return ui_key.strip()
     env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    return env_key.strip() if env_key else None
+    if env_key and env_key.strip():
+        return env_key.strip()
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            if "GEMINI_API_KEY" in st.secrets:
+                return str(st.secrets["GEMINI_API_KEY"]).strip()
+            if "GOOGLE_API_KEY" in st.secrets:
+                return str(st.secrets["GOOGLE_API_KEY"]).strip()
+    except Exception:
+        pass
+    return None
 
 
 def get_agro_api_key(ui_key: Optional[str] = None) -> Optional[str]:
-    """Resolve the AgroMonitoring key (optional live vegetation mode)."""
+    """Resolve the AgroMonitoring key: UI input wins, else env var, else st.secrets, else None."""
     if ui_key and ui_key.strip():
         return ui_key.strip()
     env_key = os.environ.get("AGRO_API_KEY") or os.environ.get("AGROMONITORING_API_KEY")
-    return env_key.strip() if env_key else None
+    if env_key and env_key.strip():
+        return env_key.strip()
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            if "AGRO_API_KEY" in st.secrets:
+                return str(st.secrets["AGRO_API_KEY"]).strip()
+            if "AGROMONITORING_API_KEY" in st.secrets:
+                return str(st.secrets["AGROMONITORING_API_KEY"]).strip()
+    except Exception:
+        pass
+    return None

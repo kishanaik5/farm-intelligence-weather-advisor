@@ -12,7 +12,7 @@ import requests
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta"
 _TIMEOUT = 30
-_PREFERRED = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
+_PREFERRED = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
 
 
 @lru_cache(maxsize=4)
@@ -45,19 +45,25 @@ def phrase_advisory(api_key: str, advisory_text: str, language: str) -> str:
         f"Lead with the single most important action, then list the key reasons in simple words. "
         f"Do not invent facts.\n\n{advisory_text}"
     )
-    try:
-        resp = requests.post(
-            f"{_BASE}/models/{model}:generateContent",
-            params={"key": api_key},
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"Gemini request failed: {exc}") from exc
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError("Gemini returned an unexpected response.") from exc
+    models_to_try = [model] + [m for m in _PREFERRED if m != model]
+    last_exc = None
+    for cand in models_to_try:
+        try:
+            resp = requests.post(
+                f"{_BASE}/models/{cand}:generateContent",
+                params={"key": api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            continue
+        except (KeyError, IndexError) as exc:
+            last_exc = exc
+            continue
+    raise RuntimeError(f"Gemini request failed: {last_exc}")
 
 
 def phrase_comprehensive_advisory(
@@ -100,16 +106,22 @@ Provide a clear, farmer-focused action plan in {language}:
 
 Keep it direct, practical, and farmer-friendly.
 """
-    try:
-        resp = requests.post(
-            f"{_BASE}/models/{model}:generateContent",
-            params={"key": api_key},
-            json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"Gemini advisory generation failed: {exc}") from exc
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError("Gemini returned an unexpected response.") from exc
+    models_to_try = [model] + [m for m in _PREFERRED if m != model]
+    last_exc = None
+    for cand in models_to_try:
+        try:
+            resp = requests.post(
+                f"{_BASE}/models/{cand}:generateContent",
+                params={"key": api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=_TIMEOUT,
+            )
+            resp.raise_for_status()
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            continue
+        except (KeyError, IndexError) as exc:
+            last_exc = exc
+            continue
+    raise RuntimeError(f"Gemini advisory generation failed: {last_exc}")
