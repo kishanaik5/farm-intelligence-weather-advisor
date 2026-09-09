@@ -44,11 +44,18 @@ RULES_CONFIG = {
 }
 
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+
 def get_gemini_api_key(ui_key: Optional[str] = None) -> Optional[str]:
     """Resolve the Gemini key: UI input wins, else env var, else None."""
     if ui_key and ui_key.strip():
         return ui_key.strip()
-    env_key = os.environ.get(GEMINI_API_KEY_ENV)
+    env_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     return env_key.strip() if env_key else None
 
 
@@ -56,5 +63,5 @@ def get_agro_api_key(ui_key: Optional[str] = None) -> Optional[str]:
     """Resolve the AgroMonitoring key (optional live vegetation mode)."""
     if ui_key and ui_key.strip():
         return ui_key.strip()
-    env_key = os.environ.get(AGRO_API_KEY_ENV)
+    env_key = os.environ.get("AGRO_API_KEY") or os.environ.get("AGROMONITORING_API_KEY")
     return env_key.strip() if env_key else None
